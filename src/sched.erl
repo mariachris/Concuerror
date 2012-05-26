@@ -28,12 +28,11 @@
 %%% Debug
 %%%----------------------------------------------------------------------
 
-%%-define(TTY, true).
--ifdef(TTY).
+%-ifdef(DEBUG_LEVEL_1).
 -define(tty(), ok).
--else.
--define(tty(), error_logger:tty(false)).
--endif.
+%-else.
+%-define(tty(), error_logger:tty(false)).
+%-endif.
 
 %%%----------------------------------------------------------------------
 %%% Definitions
@@ -211,6 +210,8 @@ interleave_aux(Target, Options, Parent) ->
 interleave_outer_loop(_T, RunCnt, Tickets, MaxBound, MaxBound, _Opt) ->
     interleave_outer_loop_ret(Tickets, RunCnt);
 interleave_outer_loop(Target, RunCnt, Tickets, CurrBound, MaxBound, Options) ->
+    ?debug_1("Preemption bound = ~p~n", [CurrBound + 1]),
+    ?debug_1("======================~n"),
     {NewRunCnt, NewTickets, Stop} = interleave_loop(Target, 1, [], Options),
     TotalRunCnt = NewRunCnt + RunCnt,
     TotalTickets = NewTickets ++ Tickets,
@@ -307,22 +308,9 @@ driver(Context, ReplayState) ->
 driver_replay(Context, ReplayState) ->
     {Next, Rest} = state:trim_head(ReplayState),
     NewContext = run(Context#context{current = Next, error = ?NO_ERROR}),
-    #context{blocked = NewBlocked} = NewContext,
     case state:is_empty(Rest) of
-        true ->
-            case ?SETS:is_element(Next, NewBlocked) of
-                %% If the last action of the replayed state prefix is a block,
-                %% we can safely abort.
-                true -> abort;
-                %% Replay has finished; proceed in normal mode, after checking
-                %% for errors during the last replayed action.
-                false -> check_for_errors(NewContext)
-            end;
-        false ->
-            case ?SETS:is_element(Next, NewBlocked) of
-                true -> log:internal("Proc. ~p should be active.", [Next]);
-                false -> driver_replay(NewContext, Rest)
-            end
+        true -> check_for_errors(NewContext);
+        false -> driver_replay(NewContext, Rest)
     end.
 
 driver_normal(#context{active = Active, current = LastLid,
@@ -331,12 +319,12 @@ driver_normal(#context{active = Active, current = LastLid,
         case ?SETS:is_element(LastLid, Active) of
             true ->
                 TmpActive = ?SETS:to_list(?SETS:del_element(LastLid, Active)),
-                {LastLid,TmpActive, next};
+                {LastLid, TmpActive, next};
             false ->
                 [Head|TmpActive] = ?SETS:to_list(Active),
                 {Head, TmpActive, current}
         end,
-    {NewContext, Insert} = run_no_block(Context, Next),
+    {NewContext, Insert} = run_aux(Context, Next),
     insert_states(State, Insert),
     check_for_errors(NewContext).
 
@@ -366,17 +354,11 @@ check_for_errors(#context{active = NewActive, blocked = NewBlocked,
         _Other -> {error, NewError, NewState}
     end.
 
-run_no_block(#context{state = State} = Context, {Next, Rest, W}) ->
+run_aux(Context, {Next, Rest, W}) ->
     NewContext = run(Context#context{current = Next, error = ?NO_ERROR}),
     #context{blocked = NewBlocked} = NewContext,
     case ?SETS:is_element(Next, NewBlocked) of
-        true ->
-            case Rest of
-                [] -> {NewContext#context{state = State}, {[], W}};
-                [RH|RT] ->
-                    NextContext = NewContext#context{state = State},
-                    run_no_block(NextContext, {RH, RT, current})
-            end;
+        true -> {NewContext, {Rest, current}};
         false -> {NewContext, {Rest, W}}
     end.
 
