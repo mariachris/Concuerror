@@ -28,6 +28,8 @@
 %%% Debug
 %%%----------------------------------------------------------------------
 
+-define(BLK, true).
+
 %-ifdef(DEBUG_LEVEL_1).
 -define(tty(), ok).
 %-else.
@@ -202,6 +204,8 @@ interleave_aux(Target, Options, Parent) ->
             {preb, Bound} -> Bound;
             false -> ?INFINITY
         end,
+    {T1, _} = statistics(wall_clock),
+    put(start_time, T1),
     Result = interleave_outer_loop(Target, 0, [], -1, PreBound, Options),
     state_stop(),
     unregister(?RP_SCHED),
@@ -214,6 +218,14 @@ interleave_outer_loop(Target, RunCnt, Tickets, CurrBound, MaxBound, Options) ->
     ?debug_1("======================~n"),
     {NewRunCnt, NewTickets, Stop} = interleave_loop(Target, 1, [], Options),
     TotalRunCnt = NewRunCnt + RunCnt,
+    T1 = get(start_time),
+    {T2, _} = statistics(wall_clock),
+    {Mins, Secs} = elapsed_time(T1, T2),
+    io:format(standard_error, "~p, ~p, ~p, ~p, ~p~n",
+              [CurrBound+1, NewRunCnt, Mins, Secs,
+               erlang:memory(total) / (1024*1024)]),
+    io:format("~p, ~p, ~p, ~p, ~p~n", [CurrBound+1, NewRunCnt, Mins, Secs,
+                                       erlang:memory(total) / (1024*1024)]),
     TotalTickets = NewTickets ++ Tickets,
     state_swap(),
     case state_peak() of
@@ -299,6 +311,94 @@ interleave_loop(Target, RunCnt, Tickets, Options) ->
 %%% Core components
 %%%----------------------------------------------------------------------
 
+-ifdef(BLK).
+driver(Context, ReplayState) ->
+    case state:is_empty(ReplayState) of
+        true -> driver_normal(Context);
+        false -> driver_replay(Context, ReplayState)
+    end.
+
+driver_replay(Context, ReplayState) ->
+    {Next, Rest} = state:trim_head(ReplayState),
+    NewContext = run(Context#context{current = Next, error = ?NO_ERROR}),
+    #context{blocked = NewBlocked} = NewContext,
+    case state:is_empty(Rest) of
+        true ->
+            case ?SETS:is_element(Next, NewBlocked) of
+                %% If the last action of the replayed state prefix is a block,
+                %% we can safely abort.
+                true -> abort;
+                %% Replay has finished; proceed in normal mode, after checking
+                %% for errors during the last replayed action.
+                false -> check_for_errors(NewContext)
+            end;
+        false ->
+            case ?SETS:is_element(Next, NewBlocked) of
+                true -> log:internal("Proc. ~p should be active.", [Next]);
+                false -> driver_replay(NewContext, Rest)
+            end
+    end.
+
+driver_normal(#context{active = Active, current = LastLid,
+                       state = State} = Context) ->
+    Next =
+        case ?SETS:is_element(LastLid, Active) of
+            true ->
+                TmpActive = ?SETS:to_list(?SETS:del_element(LastLid, Active)),
+                {LastLid,TmpActive, next};
+            false ->
+                [Head|TmpActive] = ?SETS:to_list(Active),
+                {Head, TmpActive, current}
+        end,
+    {NewContext, Insert} = run_no_block(Context, Next),
+    insert_states(State, Insert),
+    check_for_errors(NewContext).
+
+%% Handle four possible cases:
+%% - An error occured during the execution of the last process =>
+%% Terminate the run and report the erroneous interleaving sequence.
+%% - Only blocked processes exist =>
+%% Terminate the run and report a deadlock.
+%% - No active or blocked processes exist =>
+%% Terminate the run without errors.
+%% - There exists at least one active process =>
+%% Continue run.
+check_for_errors(#context{active = NewActive, blocked = NewBlocked,
+                          error = NewError, state = NewState} = NewContext) ->
+    case NewError of
+        ?NO_ERROR ->
+            case ?SETS:size(NewActive) of
+                0 ->
+                    case ?SETS:size(NewBlocked) of
+                        0 -> ok;
+                        _NonEmptyBlocked ->
+                            Deadlock = error:new({deadlock, NewBlocked}),
+                            {error, Deadlock, NewState}
+                    end;
+                _NonEmptyActive -> driver_normal(NewContext)
+            end;
+        _Other -> {error, NewError, NewState}
+    end.
+
+run_no_block(#context{state = State} = Context, {Next, Rest, W}) ->
+    NewContext = run(Context#context{current = Next, error = ?NO_ERROR}),
+    #context{blocked = NewBlocked} = NewContext,
+    case ?SETS:is_element(Next, NewBlocked) of
+        true ->
+            case Rest of
+                [] -> {NewContext#context{state = State}, {[], W}};
+                [RH|RT] ->
+                    NextContext = NewContext#context{state = State},
+                    run_no_block(NextContext, {RH, RT, current})
+            end;
+        false -> {NewContext, {Rest, W}}
+    end.
+
+insert_states(State, {Lids, current}) ->
+    lists:foreach(fun (L) -> state_save(state:extend(State, L)) end, Lids);
+insert_states(State, {Lids, next}) ->
+    lists:foreach(fun (L) -> state_save_next(state:extend(State, L)) end, Lids).
+-else.
 driver(Context, ReplayState) ->
     case state:is_empty(ReplayState) of
         true -> driver_normal(Context);
@@ -366,6 +466,8 @@ insert_states(State, {Lids, current}) ->
     lists:foreach(fun (L) -> state_save(state:extend(State, L)) end, Lids);
 insert_states(State, {Lids, next}) ->
     lists:foreach(fun (L) -> state_save_next(state:extend(State, L)) end, Lids).
+-endif.
+
 
 %% Run process Lid in context Context until it encounters a preemption point.
 run(#context{current = Lid, state = State} = Context) ->
