@@ -501,16 +501,27 @@ handle_instruction(Transition, TraceTop) ->
 
 check_external_changes(TraceTop) ->
     case unexpected_exits(TraceTop) of
-        {true, NewTraceTop} -> NewTraceTop;
-        none ->
-            #trace_state{pollable = Pollable} = TraceTop,
+        {true, NewTraceTop1} -> NewTraceTop1;
+        {none, NewTraceTop2} ->
+            #trace_state{pollable = Pollable} = NewTraceTop2,
             PollableList = ordsets:to_list(Pollable),
-            lists:foldl(fun poll_all/2, TraceTop, PollableList)
+            lists:foldl(fun poll_all/2, NewTraceTop2, PollableList)
     end.
 
-unexpected_exits(#trace_state{nexts = Nexts} = TraceTop) ->
+unexpected_exits(#trace_state{nexts = Nexts, enabled = Enabled,
+                      pollable = Pollable, blocked = Blocked} = TraceTop) ->
     receive
         {'DOWN', _, process, _, normal} -> unexpected_exits(TraceTop);
+        {'DOWN', _, process, Pid, shutdown} ->
+            Lid = lid_from_pid(Pid),
+            NewEnabled = ordsets:del_element(Lid, Enabled),
+            NewBlocked = ordsets:del_element(Lid, Blocked),
+            NewPollable = ordsets:del_element(Lid, Pollable),
+            NewNexts = dict:erase(Lid, Nexts),
+            NewTraceTop = TraceTop#trace_state{
+                nexts = NewNexts, pollable = NewPollable,
+                enabled = NewEnabled, blocked = NewBlocked},
+            unexpected_exits(NewTraceTop);
         {'DOWN', _, process, Pid, Reason} ->
             ?debug("Unexpected exit: ~p ~p\n", [Pid, Reason]),
             Lid = lid_from_pid(Pid),
@@ -520,7 +531,7 @@ unexpected_exits(#trace_state{nexts = Nexts} = TraceTop) ->
                                         backtrack = [{Lid, Entry, []}]
                                        }}
     after
-        0 -> none
+        0 -> {none, TraceTop}
     end.
 
 poll_all(Lid, TraceTop) ->
