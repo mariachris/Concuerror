@@ -530,9 +530,10 @@ spawn_fun_wrapper(Fun) ->
            Normal=:=shutdown orelse
            Normal=:={shutdown, peer_close}) ->
             MyInfo = find_my_info(),
-            concuerror_sched:notify(exit, {normal, MyInfo}),
+            concuerror_sched:notify(exit, {Normal, MyInfo}),
             MyRealInfo = find_my_info(),
-            concuerror_sched:notify(exit, {normal, MyRealInfo}, prev);
+            concuerror_sched:notify(exit, {Normal, MyRealInfo}, prev),
+            exit(Normal);
         Class:Type ->
             concuerror_sched:notify(error,[Class,Type,erlang:get_stacktrace()])
     end.                    

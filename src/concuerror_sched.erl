@@ -1225,12 +1225,12 @@ replay_trace_aux([TraceState|Rest], Acc) ->
 
 %% -----------------------------------------------------------------------------
 
-wait_next(Lid, {exit, {normal, _Info}} = Arg2) ->
+wait_next(Lid, {exit, {Reason, _Info}} = Arg2) ->
     Pid = concuerror_lid:get_pid(Lid),
     link(Pid),
     continue(Lid),
     receive
-        {'EXIT', Pid, normal} -> {Lid, exited, []}
+        {'EXIT', Pid, Reason} -> {Lid, exited, []}
     after
         ?TIME_LIMIT -> error(time_limit, [Lid, Arg2])
     end;
