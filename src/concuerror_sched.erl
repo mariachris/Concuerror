@@ -512,7 +512,8 @@ unexpected_exits(#trace_state{nexts = Nexts, enabled = Enabled,
                       pollable = Pollable, blocked = Blocked} = TraceTop) ->
     receive
         {'DOWN', _, process, _, normal} -> unexpected_exits(TraceTop);
-        {'DOWN', _, process, Pid, shutdown} ->
+        {'DOWN', _, process, Pid, Shutdown}
+                when Shutdown=:=shutdown; Shutdown=:={shutdown,peer_close} ->
             Lid = lid_from_pid(Pid),
             NewEnabled = ordsets:del_element(Lid, Enabled),
             NewBlocked = ordsets:del_element(Lid, Blocked),
