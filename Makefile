@@ -166,7 +166,7 @@ test: all
 
 concuerror:
 	printf "\
-	#%c/bin/bash\n\n\
+	#%c/usr/bin/env bash\n\n\
 	Date=\$$(date +%%s%%N)\n\
 	Name=\"$(APP_STRING)\$$Date\"\n\
 	Cookie=\"$(APP_STRING)Cookie\"\n\n\
