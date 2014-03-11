@@ -132,6 +132,14 @@ cliAux(Options) ->
     ?NT_OPTIONS = ets:new(?NT_OPTIONS, [named_table, public, set]),
     ets:insert(?NT_OPTIONS, Options),
     %% Handle options
+    case lists:keyfind('pa', 1, Options) of
+        false -> ok;
+        {'pa', PAs} -> addToCodePath(fun code:add_patha/1, PAs)
+    end,
+    case lists:keyfind('pz', 1, Options) of
+        false -> ok;
+        {'pz', PZs} -> addToCodePath(fun code:add_pathz/1, PZs)
+    end,
     case lists:keyfind('gui', 1, Options) of
         {'gui'} -> gui(Options);
         false ->
@@ -171,6 +179,17 @@ cliAux(Options) ->
     %% Destroy timer table.
     concuerror_util:timer_destroy(),
     'true'.
+
+addToCodePath(_Fun, []) ->
+    ok;
+addToCodePath(Fun, [Path|Paths]) ->
+    case Fun(Path) of
+        true -> addToCodePath(Fun, Paths);
+        {error, bad_directory} ->
+            io:format("~s: cannot add bad_directory \"~s\" to code path\n",
+                      [?APP_STRING, Path]),
+            addToCodePath(Fun, Paths)
+    end.
 
 %% Parse command line arguments
 parse([], Options) ->
@@ -421,6 +440,14 @@ parse([{Opt, Param} | Args], Options) ->
                 %% erl flag (ignore it)
                 parse(Args, Options);
 
+        "pa" ->
+            NewOptions = keyAppend('pa', 1, Options, Param),
+            parse(Args, NewOptions);
+
+        "pz" ->
+            NewOptions = keyAppend('pa', 1, Options, Param),
+            parse(Args, NewOptions);
+
         Other ->
             Msg = io_lib:format("unrecognised concuerror flag: -~s", [Other]),
             {'error', 'arguments', Msg}
@@ -477,6 +504,8 @@ help() ->
      "  -t|--target module function [args]\n"
      "                          Specify the function to execute\n"
      "  -f|--files  modules     Specify the files (modules) to instrument\n"
+     "      -pa     Dir         Add Dir to the beginning of the code path\n"
+     "      -pz     Dir         Add Dir to the end of the code path\n"
      "  -o|--output file        Specify the output file (default results.txt)\n"
      "  -p|--preb   number|inf  Set preemption bound (default is 2)\n"
      "  -I          include_dir Pass the include_dir to concuerror\n"
