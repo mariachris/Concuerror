@@ -504,8 +504,8 @@ help() ->
      "  -t|--target module function [args]\n"
      "                          Specify the function to execute\n"
      "  -f|--files  modules     Specify the files (modules) to instrument\n"
-     "      -pa     Dir         Add Dir to the beginning of the code path\n"
-     "      -pz     Dir         Add Dir to the end of the code path\n"
+     "  -pa         Dir         Add Dir to the beginning of the code path\n"
+     "  -pz         Dir         Add Dir to the end of the code path\n"
      "  -o|--output file        Specify the output file (default results.txt)\n"
      "  -p|--preb   number|inf  Set preemption bound (default is 2)\n"
      "  -I          include_dir Pass the include_dir to concuerror\n"
@@ -536,10 +536,10 @@ help() ->
 
 
 %%%----------------------------------------------------------------------
-%%% Analyze Commnad
+%%% Analyze Command
 %%%----------------------------------------------------------------------
 
-%% @spec analyze(options()) -> 'true'
+%% @spec analyze(options()) -> analysis_ret()
 %% @doc: Run Concuerror analysis with the given options.
 -spec analyze(options()) -> analysis_ret().
 analyze(Options) ->
