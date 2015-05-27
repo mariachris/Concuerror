@@ -1,3 +1,7 @@
+Attention!
+----------
+This is an old version of Concuerror. The actively maintained version is now hosted at https://github.com/parapluu/Concuerror.
+
 Concuerror
 ==========
 Concuerror is a systematic testing tool for concurrent Erlang programs.
